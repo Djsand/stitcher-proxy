@@ -1,6 +1,6 @@
 {
   "name": "neverforget",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Universal infinite-memory proxy for LLMs. LLMs have amnesia. NeverForget is the cure.",
   "type": "module",
   "bin": {
