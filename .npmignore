@@ -1,0 +1,8 @@
+.venv/
+.git/
+.gitignore
+*.pyc
+__pycache__/
+bin/neverforget.mjs
+install.sh
+REVIEW.md

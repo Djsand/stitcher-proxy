@@ -1,147 +1,158 @@
-# 🧵 NeverForget
+# 🧠 NeverForget
 
-**LLMs have amnesia. NeverForget is the cure.**
+**LLMs have amnesia. We built the cure.**
 
-A transparent proxy that gives any LLM infinite memory. Zero dependencies. One command.
-
----
-
-## Install
+[![npm](https://img.shields.io/npm/v/neverforget?color=blue&style=flat-square)](https://www.npmjs.com/package/neverforget) [![license](https://img.shields.io/npm/l/neverforget?style=flat-square)](LICENSE) [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen?style=flat-square)]() [![node](https://img.shields.io/node/v/neverforget?style=flat-square)]()
 
 ```bash
-npm install -g neverforget
+npm i -g neverforget
 ```
 
-Or run without installing:
+## The Problem
 
-```bash
-npx neverforget
-```
+You're building an AI app, testing a prompt, or writing code with an agent, and suddenly it forgets the context from five minutes ago.
+You're forced to manually paste history back in, build messy databases, or just sigh and start over.
+We built this because we were tired of managing complex vector DBs just to keep a simple chat going.
 
-Or one-liner:
+## The Solution
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Djsand/neverforget/main/install.sh | bash
-```
+NeverForget is a transparent local proxy that gives any LLM infinite memory with zero dependencies.
+It intercepts your API calls, stitches your entire conversation history into the context window, and deduplicates the noise.
+Your LLM gets maximum context every single time, without you having to change a single line of application logic.
 
-## How It Works
+## Demo
 
-You point your LLM client at NeverForget instead of OpenAI/Anthropic directly.
-NeverForget intercepts every request, stitches in the full conversation history from local storage, and forwards it upstream. Your LLM gets maximum context every time. Transparently.
+```text
+$ npm i -g neverforget
+$ neverforget init
+🧠 NeverForget initialized.
 
-```
-┌─────────┐     POST /v1/chat/completions      ┌──────────────────┐
-│  Your    │ ─────────────────────────────────▶ │  NeverForget  │
-│  App     │    (only new messages)             │                  │
-└─────────┘                                     │  1. Save to JSONL│
-     ▲                                          │  2. Stitch history│
-     │                                          │  3. Dedup        │
-     │         Response (unchanged)             │  4. Token budget │
-     └─────────────────────────────────────── ◀ │  5. Forward      │
-                                                └────────┬─────────┘
-                                                         │
-                                                         ▼
-                                                ┌──────────────────┐
-                                                │  OpenAI/Anthropic│
-                                                │  (full context)  │
-                                                └──────────────────┘
+$ neverforget start
+🚀 Proxy running on http://localhost:8081
+
+$ curl http://localhost:8081/v1/chat/completions \
+    -H "Authorization: Bearer $OPENAI_API_KEY" \
+    -H "X-NeverForget-Session: my-app" \
+    -d '{"messages": [{"role": "user", "content": "What did I just say?"}]}'
+
+{
+  "choices": [{
+    "message": {
+      "content": "You told me to remember that your favorite color is blue."
+    }
+  }]
+}
+✨ It remembers!
 ```
 
 ## Quick Start
 
 ```bash
-# Setup (pick provider, set API key, configure token budget)
+npm i -g neverforget
 neverforget init
-
-# Start the proxy
-neverforget
-
-# Auto-configure Claude Code, Codex, and all OpenAI clients
-neverforget integrate all
+neverforget start
 ```
 
-## Usage
+## How It Works
 
-Change your `base_url`. That's it.
+```text
+┌─────────┐      POST /chat/completions       ┌───────────────┐
+│         │ ────────────────────────────────▶ │  NeverForget  │
+│  Your   │                                   │  1. Save      │
+│  App    │      Response (unchanged)         │  2. Stitch    │
+│         │ ◀───────────────────────────────  │  3. Forward   │
+└─────────┘                                   └───────┬───────┘
+                                                      │
+                                                      ▼
+                                              ┌───────────────┐
+                                              │    OpenAI     │
+                                              │  (Anthropic)  │
+                                              └───────────────┘
+```
+
+You point your client at `localhost:8081` instead of the API.
+When you send a request, NeverForget saves your new message locally.
+It then stitches your entire past conversation history into the context window.
+The enriched payload is forwarded to the real API, making the LLM artificially omniscient.
+To your app, it looks like a standard LLM—but with a perfect memory.
+
+## Usage Examples
+
+### Python
 
 ```python
+# The model remembers everything tied to "user-123"
 from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:8081/v1",
-    api_key="your-real-key",
-    default_headers={"X-NeverForget-Session": "user-123"}
-)
-
-response = client.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": "What did we talk about yesterday?"}]
-)
-# NeverForget injected the full history. The model remembers.
+client = OpenAI(base_url="http://localhost:8081/v1", api_key="sk-...")
+response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": "What was my last question?"}], extra_headers={"X-NeverForget-Session": "user-123"})
+print(response.choices[0].message.content)
 ```
 
+### Node.js
+
+```javascript
+// Magic memory injection on every single request
+import OpenAI from 'openai';
+const openai = new OpenAI({ baseURL: 'http://localhost:8081/v1', apiKey: 'sk-...' });
+const completion = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'user', content: 'Continue where we left off.' }] }, { headers: { 'X-NeverForget-Session': 'session-xyz' } });
+console.log(completion.choices[0].message.content);
+```
+
+### cURL
+
 ```bash
-curl http://localhost:8081/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -H "X-NeverForget-Session: my-session" \
-  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Continue where we left off."}]}'
+# Just hit the proxy and watch it recall your history
+curl http://localhost:8081/v1/chat/completions -H "Authorization: Bearer sk-..." -H "X-NeverForget-Session: cli-test" \
+  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Who am I?"}]}'
 ```
 
 ## Works With
 
-Claude Code · Codex · Cursor · OpenClaw · LangChain · Vercel AI SDK · Ollama · vLLM · any OpenAI-compatible client
+Claude Code · Codex · Cursor · LangChain · Vercel AI SDK · Ollama · vLLM · anything OpenAI-compatible
 
-```bash
-neverforget integrate all          # Configure everything
-neverforget integrate claude-code  # Just Claude Code
-neverforget integrate codex        # Just Codex
-```
+> **Pro tip:** Run `neverforget integrate all` to automatically configure your favorite CLI tools to use the proxy!
 
 ## CLI Reference
 
-```
-neverforget                        Start the proxy
+```text
+neverforget                        Start the proxy on the default port
 neverforget init                   Interactive setup wizard
-neverforget start [--port N]       Start with options
-neverforget status                 Config + session count
-neverforget sessions               List sessions
-neverforget sessions purge <name>  Delete a session
-neverforget config                 Show all settings
-neverforget config edit            Interactive config editor
-neverforget config set <key> <val> Quick set a value
+neverforget start [--port N]       Start the proxy with options
+neverforget status                 Show config and session count
+neverforget sessions               List all tracked memory sessions
+neverforget sessions purge <name>  Delete a specific session's memory
+neverforget config                 Show all current settings
+neverforget config edit            Open interactive config editor
+neverforget config set <k> <v>     Quick set a configuration value
 neverforget integrate [target]     Auto-configure integrations
 ```
 
 ## Configuration
 
-All settings are tunable via `neverforget config edit`:
+Settings can be tuned via `neverforget config edit` or environment variables:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `port` | `8081` | Proxy port |
-| `upstream_url` | `https://api.openai.com` | Upstream LLM API |
-| `max_tokens` | `128000` | Token budget for stitched context |
-| `dedup_threshold` | `0.6` | Similarity cutoff for dedup (0-1) |
-| `condense_threshold` | `0.35` | Similarity cutoff for condensing |
-| `chars_per_token` | `4` | Token estimation ratio |
-| `roll_size_bytes` | `5242880` | File roll threshold (5MB) |
-
-Config priority: CLI flags → env vars → `~/.stitcher/config.json` → defaults
+| `port` | `8081` | Local port for the proxy |
+| `upstream_url` | `https://api.openai.com` | Target LLM API URL |
+| `max_tokens` | `128000` | Token budget for injected history |
+| `dedup_threshold` | `0.6` | Similarity cutoff for deduplication (0-1) |
+| `condense_threshold` | `0.35` | Similarity cutoff for replacing with placeholders |
+| `chars_per_token` | `4` | Ratio used to estimate token counts |
+| `roll_size_bytes` | `5242880` | File roll threshold (5MB default) |
 
 ## Under The Hood
 
-NeverForget stores every message as a line in JSONL files. When context is needed:
+* **Reads backward** through your local JSONL archives (newest → oldest)
+* **Deduplicates** repetitive assistant responses using trigram similarity
+* **Budgets** your tokens dynamically, stopping when the `max_tokens` limit is reached
+* **Condenses** older, similar messages into lightweight placeholders to save space
+* **Reverses** the stitched array back into chronological order and forwards it upstream
 
-1. **Read backward** through archived files (newest → oldest)
-2. **Deduplicate** near-identical assistant messages via trigram similarity
-3. **Budget** — stop when token limit is reached
-4. **Condense** — replace older similar messages with placeholders
-5. **Reverse** — restore chronological order
-6. **Forward** — send the full context to upstream
+## Contributing
 
-Sessions auto-roll to numbered archives when files exceed the configured size.
+Pull requests are welcome. Open an issue first if you're planning a massive rewrite. We like keeping it zero-dependency and fast.
 
 ## License
 
-MIT
+[MIT](LICENSE)

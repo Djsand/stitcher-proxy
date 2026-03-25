@@ -37,19 +37,20 @@ async function handleChatCompletions(req, res, bodyStr) {
   try {
     body = JSON.parse(bodyStr);
   } catch (e) {
-    res.writeHead(400);
-    return res.end("Invalid JSON body");
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: { message: "Invalid JSON body", type: "invalid_request_error" } }));
   }
   
   const incomingMessages = body.messages || [];
   if (incomingMessages.length === 0) {
-    res.writeHead(400);
-    return res.end("No messages provided");
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: { message: "No messages provided", type: "invalid_request_error" } }));
   }
   
-  let sessionId = req.headers["x-stitcher-session"];
+  // Session ID resolution: header → query param → hash of system/first message
+  let sessionId = req.headers["x-stitcher-session"] || req.headers["x-neverforget-session"];
   if (!sessionId) {
-    const urlObj = new URL(req.url, `http://${req.headers.host}`);
+    const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     sessionId = urlObj.searchParams.get("session");
   }
   if (!sessionId) {
@@ -58,14 +59,33 @@ async function handleChatCompletions(req, res, bodyStr) {
     sessionId = crypto.createHash("md5").update(firstContent).digest("hex").substring(0, 12);
   }
 
-  const { messages: existingMessages } = getStitchedContext(sessionId);
+  // Sanitize session ID to prevent path traversal
+  sessionId = sessionId.replace(/[^a-zA-Z0-9_\-]/g, '_');
+
+  let existingMessages;
+  try {
+    ({ messages: existingMessages } = getStitchedContext(sessionId));
+  } catch (e) {
+    console.error("Error reading session:", e.message);
+    existingMessages = [];
+  }
   const newIncoming = _getNewMessages(existingMessages, incomingMessages);
   
   if (newIncoming.length > 0) {
-    appendMessages(sessionId, newIncoming);
+    try {
+      appendMessages(sessionId, newIncoming);
+    } catch (e) {
+      console.error("Error storing messages:", e.message);
+    }
   }
   
-  const { messages: stitchedMessages } = getStitchedContext(sessionId);
+  let stitchedMessages;
+  try {
+    ({ messages: stitchedMessages } = getStitchedContext(sessionId));
+  } catch (e) {
+    console.error("Error stitching context:", e.message);
+    stitchedMessages = incomingMessages;
+  }
   
   const proxyBody = { ...body, messages: stitchedMessages };
   if (!proxyBody.model && config.default_model) {
@@ -75,7 +95,17 @@ async function handleChatCompletions(req, res, bodyStr) {
   const proxyBodyStr = JSON.stringify(proxyBody);
   
   let baseUrl = config.upstream_url.replace(/\/$/, "");
-  let upstreamUrl = baseUrl.endsWith("/v1") ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
+  // If upstream already ends with /v1, don't double it
+  let upstreamUrl;
+  if (baseUrl.endsWith("/v1")) {
+    upstreamUrl = `${baseUrl}/chat/completions`;
+  } else if (baseUrl.includes("/v1/")) {
+    // Already has full path somehow
+    upstreamUrl = baseUrl;
+  } else {
+    upstreamUrl = `${baseUrl}/v1/chat/completions`;
+  }
+  
   const urlObj = new URL(upstreamUrl);
   
   const headers = {
@@ -83,10 +113,14 @@ async function handleChatCompletions(req, res, bodyStr) {
     "Content-Length": Buffer.byteLength(proxyBodyStr)
   };
   
+  // Forward auth headers — check all common patterns
   if (req.headers["authorization"]) headers["authorization"] = req.headers["authorization"];
   else if (req.headers["api-key"]) headers["api-key"] = req.headers["api-key"];
   else if (req.headers["x-api-key"]) headers["x-api-key"] = req.headers["x-api-key"];
   else if (config.api_key) headers["authorization"] = `Bearer ${config.api_key}`;
+
+  // Forward Anthropic-specific headers
+  if (req.headers["anthropic-version"]) headers["anthropic-version"] = req.headers["anthropic-version"];
   
   const isStream = !!body.stream;
   const clientModule = urlObj.protocol === "https:" ? https : http;
@@ -97,18 +131,45 @@ async function handleChatCompletions(req, res, bodyStr) {
     timeout: 300000 // 5 mins
   }, (proxyRes) => {
     // Forward headers from upstream to client
-    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    const responseHeaders = { ...proxyRes.headers };
+    res.writeHead(proxyRes.statusCode, responseHeaders);
     
     if (isStream) {
       let fullAssistantContent = "";
       let assistantRole = "assistant";
+      let sseBuffer = "";  // Buffer for incomplete SSE lines
       
       proxyRes.on('data', (chunk) => {
         res.write(chunk);
-        const chunkStr = chunk.toString('utf-8');
-        const lines = chunkStr.split('\n');
+        sseBuffer += chunk.toString('utf-8');
+        
+        // Process complete lines only
+        const lines = sseBuffer.split('\n');
+        // Keep the last potentially incomplete line in the buffer
+        sseBuffer = lines.pop() || "";
+        
         for (const line of lines) {
           const tLine = line.trim();
+          if (tLine.startsWith("data: ") && tLine !== "data: [DONE]") {
+            const dataStr = tLine.substring(6).trim();
+            if (dataStr) {
+              try {
+                const data = JSON.parse(dataStr);
+                if (data.choices && data.choices.length > 0) {
+                  const delta = data.choices[0].delta || {};
+                  if (delta.role) assistantRole = delta.role;
+                  if (delta.content) fullAssistantContent += delta.content;
+                }
+              } catch (e) { /* partial JSON, skip */ }
+            }
+          }
+        }
+      });
+      
+      proxyRes.on('end', () => {
+        // Process any remaining data in buffer
+        if (sseBuffer.trim()) {
+          const tLine = sseBuffer.trim();
           if (tLine.startsWith("data: ") && tLine !== "data: [DONE]") {
             const dataStr = tLine.substring(6).trim();
             if (dataStr) {
@@ -123,23 +184,31 @@ async function handleChatCompletions(req, res, bodyStr) {
             }
           }
         }
-      });
-      
-      proxyRes.on('end', () => {
+        
         if (fullAssistantContent) {
-          appendMessages(sessionId, [{ role: assistantRole, content: fullAssistantContent }]);
+          try {
+            appendMessages(sessionId, [{ role: assistantRole, content: fullAssistantContent }]);
+          } catch (e) {
+            console.error("Error storing assistant response:", e.message);
+          }
         }
         res.end();
       });
+
+      proxyRes.on('error', (err) => {
+        console.error("Upstream response stream error:", err.message);
+        res.end();
+      });
     } else {
-      let responseData = "";
+      const chunks = [];
       proxyRes.on('data', chunk => {
-        responseData += chunk;
+        chunks.push(chunk);
         res.write(chunk);
       });
       proxyRes.on('end', () => {
-        if (proxyRes.statusCode === 200) {
+        if (proxyRes.statusCode >= 200 && proxyRes.statusCode < 300) {
           try {
+            const responseData = Buffer.concat(chunks).toString('utf-8');
             const respJson = JSON.parse(responseData);
             if (respJson.choices && respJson.choices.length > 0) {
               const assistantMsg = respJson.choices[0].message;
@@ -147,30 +216,87 @@ async function handleChatCompletions(req, res, bodyStr) {
                 appendMessages(sessionId, [assistantMsg]);
               }
             }
-          } catch (e) {}
+          } catch (e) {
+            // Non-JSON or malformed response, skip storing
+          }
         }
+        res.end();
+      });
+      proxyRes.on('error', (err) => {
+        console.error("Upstream response error:", err.message);
         res.end();
       });
     }
   });
   
   proxyReq.on('error', (err) => {
-    console.error("Proxy error:", err);
+    console.error("Proxy connection error:", err.message);
     if (!res.headersSent) {
-      res.writeHead(502);
-      res.end("Bad Gateway");
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: "Bad Gateway — upstream unreachable", type: "proxy_error" } }));
     }
+  });
+
+  proxyReq.on('timeout', () => {
+    proxyReq.destroy(new Error('Request timeout'));
   });
   
   proxyReq.write(proxyBodyStr);
   proxyReq.end();
 }
 
+function handlePassthrough(req, res) {
+  let baseUrl = config.upstream_url.replace(/\/$/, "");
+  const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  
+  // Build upstream URL preserving the path
+  let upstreamPath = urlObj.pathname + urlObj.search;
+  let upstreamUrl = baseUrl + upstreamPath;
+  
+  const upstreamUrlObj = new URL(upstreamUrl);
+  const clientModule = upstreamUrlObj.protocol === "https:" ? https : http;
+
+  // Forward most headers, skip hop-by-hop
+  const headers = { ...req.headers };
+  delete headers['host'];
+  delete headers['connection'];
+  delete headers['x-stitcher-session'];
+  delete headers['x-neverforget-session'];
+  
+  // Add auth if not present
+  if (!headers['authorization'] && !headers['api-key'] && !headers['x-api-key'] && config.api_key) {
+    headers['authorization'] = `Bearer ${config.api_key}`;
+  }
+
+  const proxyReq = clientModule.request(upstreamUrl, {
+    method: req.method,
+    headers,
+    timeout: 300000
+  }, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error("Passthrough proxy error:", err.message);
+    if (!res.headersSent) {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: "Bad Gateway", type: "proxy_error" } }));
+    }
+  });
+
+  proxyReq.on('timeout', () => {
+    proxyReq.destroy(new Error('Request timeout'));
+  });
+
+  req.pipe(proxyReq);
+}
+
 export function startServer() {
   const server = http.createServer((req, res) => {
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*');
     
     if (req.method === 'OPTIONS') {
@@ -178,26 +304,82 @@ export function startServer() {
       return res.end();
     }
     
-    const urlObj = new URL(req.url, `http://${req.headers.host}`);
+    const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    
+    // Health check
+    if (req.method === 'GET' && (urlObj.pathname === '/health' || urlObj.pathname === '/')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ status: "ok", service: "neverforget" }));
+    }
     
     if (req.method === 'GET' && urlObj.pathname === '/v1/stitcher/stats') {
-      const stats = getStats();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify(stats));
+      try {
+        const stats = getStats();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(stats));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: { message: "Internal error fetching stats" } }));
+      }
     }
     
     if (req.method === 'POST' && urlObj.pathname === '/v1/chat/completions') {
       let bodyStr = '';
-      req.on('data', chunk => bodyStr += chunk);
-      req.on('end', () => handleChatCompletions(req, res, bodyStr));
+      let bodySize = 0;
+      const maxBodySize = 50 * 1024 * 1024; // 50MB limit
+      
+      req.on('data', chunk => {
+        bodySize += chunk.length;
+        if (bodySize > maxBodySize) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: { message: "Request body too large" } }));
+          req.destroy();
+          return;
+        }
+        bodyStr += chunk;
+      });
+      req.on('end', () => {
+        if (!res.writableEnded) {
+          handleChatCompletions(req, res, bodyStr);
+        }
+      });
+      req.on('error', (err) => {
+        console.error("Request read error:", err.message);
+        if (!res.headersSent) {
+          res.writeHead(400);
+          res.end("Bad Request");
+        }
+      });
       return;
     }
     
-    res.writeHead(404);
-    res.end('Not Found');
+    // Passthrough: forward any other /v1/* request to upstream
+    if (urlObj.pathname.startsWith('/v1/')) {
+      return handlePassthrough(req, res);
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: "Not Found" } }));
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${config.port} is already in use. Try a different port with --port.`);
+      process.exit(1);
+    }
+    console.error("Server error:", err);
   });
   
   server.listen(config.port, '0.0.0.0', () => {
     // CLI handles console logging
   });
+
+  // Graceful shutdown
+  const shutdown = () => {
+    console.log("\nShutting down...");
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 5000);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }

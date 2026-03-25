@@ -20,54 +20,65 @@ function _textSimilarity(a, b) {
     if (trigramsB.has(t)) intersection++;
   }
   const union = trigramsA.size + trigramsB.size - intersection;
-  return intersection / union;
+  return union === 0 ? 0.0 : intersection / union;
 }
 
 function estimateTokens(text) {
-  return Math.floor(text.length / config.chars_per_token);
+  // Use Buffer.byteLength for accurate multi-byte character handling (e.g. Danish æøå, CJK)
+  const byteLen = Buffer.byteLength(text, 'utf-8');
+  return Math.max(1, Math.floor(byteLen / config.chars_per_token));
+}
+
+function _extractText(content) {
+  if (!content) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter(p => typeof p === "object" && p.type === "text")
+      .map(p => p.text || "")
+      .join(" ");
+  }
+  return JSON.stringify(content);
 }
 
 function readJsonlMessages(filepath) {
   const messages = [];
+  let content;
   try {
-    const content = fs.readFileSync(filepath, "utf-8");
-    const lines = content.split("\n");
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const record = JSON.parse(trimmed);
-        if (record.type === "message" && record.message) {
-          const msg = record.message;
-          if (["system", "user", "assistant"].includes(msg.role)) {
-            if (msg.role === "assistant" && messages.length > 0) {
-              let msgText = msg.content || "";
-              if (Array.isArray(msgText)) {
-                msgText = msgText.filter(p => typeof p === "object" && p.type === "text").map(p => p.text || "").join(" ");
-              }
-              const recentAssistant = messages.slice(-10).filter(m => m.role === "assistant").slice(-5);
-              let isDup = false;
-              for (const m of recentAssistant) {
-                let oldText = m.content || "";
-                if (Array.isArray(oldText)) {
-                  oldText = oldText.filter(p => typeof p === "object" && p.type === "text").map(p => p.text || "").join(" ");
-                }
-                if (_textSimilarity(oldText, msgText) > config.dedup_threshold) {
-                  isDup = true;
-                  break;
-                }
-              }
-              if (isDup) continue;
-            }
-            messages.push(msg);
-          }
-        }
-      } catch (e) {
-        // ignore JSON parse error
-      }
-    }
+    content = fs.readFileSync(filepath, "utf-8");
   } catch (e) {
-    // ignore
+    // File might have been deleted between listing and reading
+    return messages;
+  }
+  
+  const lines = content.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const record = JSON.parse(trimmed);
+      if (record.type === "message" && record.message) {
+        const msg = record.message;
+        if (["system", "user", "assistant"].includes(msg.role)) {
+          if (msg.role === "assistant" && messages.length > 0) {
+            const msgText = _extractText(msg.content);
+            const recentAssistant = messages.slice(-10).filter(m => m.role === "assistant").slice(-5);
+            let isDup = false;
+            for (const m of recentAssistant) {
+              const oldText = _extractText(m.content);
+              if (_textSimilarity(oldText, msgText) > config.dedup_threshold) {
+                isDup = true;
+                break;
+              }
+            }
+            if (isDup) continue;
+          }
+          messages.push(msg);
+        }
+      }
+    } catch (e) {
+      // Skip corrupted JSON lines silently
+    }
   }
   return messages;
 }
@@ -81,8 +92,7 @@ function _condenseRepetitive(messages) {
   const condensed = new Set();
   for (let i = assistantIndices.length - 1; i > 0; i--) {
     const idxNew = assistantIndices[i];
-    let newText = messages[idxNew].content || "";
-    if (Array.isArray(newText)) newText = newText.filter(p => typeof p === "object" && p.type === "text").map(p => p.text || "").join(" ");
+    const newText = _extractText(messages[idxNew].content);
     
     if (!newText || condensed.has(idxNew)) continue;
     
@@ -90,9 +100,7 @@ function _condenseRepetitive(messages) {
       const idxOld = assistantIndices[j];
       if (condensed.has(idxOld)) continue;
       
-      let oldText = messages[idxOld].content || "";
-      if (Array.isArray(oldText)) oldText = oldText.filter(p => typeof p === "object" && p.type === "text").map(p => p.text || "").join(" ");
-      
+      const oldText = _extractText(messages[idxOld].content);
       if (!oldText) continue;
       
       const sim = _textSimilarity(newText, oldText);
@@ -122,31 +130,40 @@ export function getStitchedContext(sessionId) {
   const selectedMessages = [];
   let totalTokens = 0;
   const maxTokens = config.max_tokens;
+  // Reserve ~5% for the upstream model's response
+  const budgetTokens = Math.floor(maxTokens * 0.95);
 
   for (let i = allFiles.length - 1; i >= 0; i--) {
     const filepath = allFiles[i];
     const fileMessages = readJsonlMessages(filepath);
+    if (fileMessages.length === 0) continue;
+    
     const fileText = JSON.stringify(fileMessages);
     const fileTokens = estimateTokens(fileText);
 
-    if (totalTokens + fileTokens > maxTokens) {
+    if (totalTokens + fileTokens > budgetTokens) {
+      // Partial file: read messages backward until budget exhausted
       for (let j = fileMessages.length - 1; j >= 0; j--) {
         const msg = fileMessages[j];
         const msgTokens = estimateTokens(JSON.stringify(msg));
-        if (totalTokens + msgTokens > maxTokens) break;
+        if (totalTokens + msgTokens > budgetTokens) break;
         selectedMessages.push(msg);
         totalTokens += msgTokens;
       }
       break;
     }
 
+    // Full file fits: add all messages (backward order)
     for (let j = fileMessages.length - 1; j >= 0; j--) {
       selectedMessages.push(fileMessages[j]);
     }
     totalTokens += fileTokens;
   }
 
+  // Restore chronological order
   selectedMessages.reverse();
+  
+  // Condense repetitive assistant messages
   const condensed = _condenseRepetitive(selectedMessages);
   
   return { messages: condensed, totalTokens };
