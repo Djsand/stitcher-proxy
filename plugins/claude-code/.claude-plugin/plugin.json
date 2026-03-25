@@ -1,0 +1,8 @@
+{
+  "name": "neverforget",
+  "description": "Infinite memory for Claude Code. Auto-starts the NeverForget proxy so your conversations persist across sessions.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Nicolai Sand"
+  }
+}
