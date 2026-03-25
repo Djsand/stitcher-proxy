@@ -14,9 +14,54 @@ Stitcher is a transparent proxy that gives your LLM infinite memory. You send yo
 
 ```bash
 pip install stitcher-proxy
-stitcher-proxy
+stitcher-proxy init
+stitcher-proxy start
 ```
-*Starts the proxy on `http://localhost:8081` pointing to OpenAI.*
+*`init` runs an interactive setup wizard to configure your provider, API key, model, and token budget.*
+
+## Works With
+
+Stitcher acts as a transparent, infinite-memory drop-in for:
+
+- **Claude Code**
+- **OpenClaw**
+- **Codex**
+- **Cursor**
+- **LangChain**
+- **Vercel AI SDK**
+- **Any OpenAI client**
+
+## CLI Subcommands
+
+Stitcher Proxy includes a full CLI suite for managing your proxy and sessions.
+
+- `stitcher-proxy init` — Run the interactive setup wizard.
+- `stitcher-proxy start` — Start the proxy.
+- `stitcher-proxy status` — Show running status, session count, and config summary.
+- `stitcher-proxy sessions` — List all sessions with message counts and storage sizes.
+- `stitcher-proxy sessions purge <name>` — Delete a specific session's data.
+- `stitcher-proxy config` — Print current configuration.
+- `stitcher-proxy config set <key> <value>` — Update a config value.
+- `stitcher-proxy integrate <target>` — Show integration guides (e.g., `claude-code`, `openclaw`, `codex`).
+
+## Integration Guides
+
+Stitcher provides built-in integration guides for popular tools. Run `stitcher-proxy integrate` to see all options.
+
+- [Claude Code Integration](docs/integrations/claude-code.md) (`stitcher-proxy integrate claude-code`)
+- [OpenClaw Integration](docs/integrations/openclaw.md) (`stitcher-proxy integrate openclaw`)
+- [Codex Integration](docs/integrations/codex.md) (`stitcher-proxy integrate codex`)
+- [Cursor Integration](docs/integrations/cursor.md)
+- [Generic/OpenAI Compatible Integration](docs/integrations/generic.md)
+
+### Global Environment Variable Support
+
+The proxy works globally when set via standard base URL environment variables. Clients will seamlessly route their requests through Stitcher:
+
+```bash
+export OPENAI_BASE_URL=http://localhost:8081/v1
+export ANTHROPIC_BASE_URL=http://localhost:8081/v1
+```
 
 ## How It Works
 
@@ -71,6 +116,8 @@ curl http://localhost:8081/v1/chat/completions \
 ```
 
 ## Configuration
+
+Config loading priority: CLI flags > Environment Variables > `~/.stitcher/config.json` > Defaults.
 
 | CLI Flag | Description | Default |
 |----------|-------------|---------|
