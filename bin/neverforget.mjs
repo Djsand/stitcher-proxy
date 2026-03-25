@@ -79,7 +79,7 @@ async function runWizard() {
     config.port = port;
     saveConfig();
     console.log(c(`✅ Config saved to ${getConfigFilePath()}`, "green"));
-    console.log("Start the proxy with: stitcher-proxy start");
+    console.log("Start the proxy with: neverforget start");
   } else {
     console.log(c("❌ Setup cancelled.", "red"));
   }
@@ -249,8 +249,8 @@ async function configCmd(args) {
     console.log(`  ${c(key, 'bold').padEnd(40)} ${display}`);
     console.log(`  ${''.padEnd(29)} ${c(desc, 'yellow')}`);
   }
-  console.log(`\n  Edit interactively: ${c('stitcher-proxy config edit', 'green')}`);
-  console.log(`  Set one value:      ${c('stitcher-proxy config set <key> <value>', 'green')}`);
+  console.log(`\n  Edit interactively: ${c('neverforget config edit', 'green')}`);
+  console.log(`  Set one value:      ${c('neverforget config set <key> <value>', 'green')}`);
 }
 
 function addToShellProfile(line) {
@@ -306,8 +306,8 @@ function integrateCmd(args) {
     }
   } else {
     console.log(c("🧵 Stitcher Integrations", "cyan"));
-    console.log(`\n  ${c('stitcher-proxy integrate all', 'bold')}         — Auto-configure everything`);
-    console.log(`  ${c('stitcher-proxy integrate claude-code', 'bold')} — Claude Code`);
+    console.log(`\n  ${c('neverforget integrate all', 'bold')}         — Auto-configure everything`);
+    console.log(`  ${c('neverforget integrate claude-code', 'bold')} — Claude Code`);
   }
 }
 
@@ -330,20 +330,20 @@ async function main() {
   }
   
   if (command === "help") {
-    console.log(`${c("🧵 stitcher-proxy", "cyan")} — Universal infinite-memory proxy for LLMs
+    console.log(`${c("🧵 neverforget", "cyan")} — Universal infinite-memory proxy for LLMs
 
 ${c("Usage:", "bold")}
-  stitcher-proxy                        Start the proxy (default)
-  stitcher-proxy init                   Interactive setup wizard
-  stitcher-proxy start [--port N]       Start the proxy
-  stitcher-proxy status                 Show config + session count
-  stitcher-proxy sessions               List all sessions
-  stitcher-proxy sessions purge <name>  Delete a session
-  stitcher-proxy config                 Show all settings
-  stitcher-proxy config edit            Interactive config editor
-  stitcher-proxy config set <key> <val> Set a config value
-  stitcher-proxy integrate [target]     Auto-configure tool integrations
-  stitcher-proxy --help                 Show this help
+  neverforget                        Start the proxy (default)
+  neverforget init                   Interactive setup wizard
+  neverforget start [--port N]       Start the proxy
+  neverforget status                 Show config + session count
+  neverforget sessions               List all sessions
+  neverforget sessions purge <name>  Delete a session
+  neverforget config                 Show all settings
+  neverforget config edit            Interactive config editor
+  neverforget config set <key> <val> Set a config value
+  neverforget integrate [target]     Auto-configure tool integrations
+  neverforget --help                 Show this help
 
 ${c("Options:", "bold")}
   --port <n>           Proxy port (default: 8081)
@@ -352,8 +352,8 @@ ${c("Options:", "bold")}
   --data-dir <path>    Session storage directory
 
 ${c("Quick start:", "bold")}
-  npx stitcher-proxy init    # Setup
-  npx stitcher-proxy         # Run`);
+  npx neverforget init    # Setup
+  npx neverforget         # Run`);
   } else if (command === "init") {
     await runWizard();
   } else if (command === "start") {

@@ -10,8 +10,8 @@ BOLD='\033[1m'
 RESET='\033[0m'
 
 echo ""
-echo -e "${CYAN}${BOLD}  🧵 Stitcher Proxy Installer${RESET}"
-echo -e "${CYAN}  LLMs have amnesia. Stitcher is the cure.${RESET}"
+echo -e "${CYAN}${BOLD}  🧵 NeverForget Installer${RESET}"
+echo -e "${CYAN}  LLMs have amnesia. NeverForget is the cure.${RESET}"
 echo ""
 
 # Check Node.js
@@ -36,20 +36,20 @@ fi
 echo -e "${GREEN}✓${RESET} Node.js $(node -v) detected"
 
 # Install
-echo -e "${CYAN}Installing stitcher-proxy globally...${RESET}"
-npm install -g stitcher-proxy
+echo -e "${CYAN}Installing neverforget globally...${RESET}"
+npm install -g neverforget
 
 echo ""
 echo -e "${GREEN}${BOLD}✅ Installed!${RESET}"
 echo ""
-echo -e "  Run the setup wizard:  ${BOLD}stitcher-proxy init${RESET}"
-echo -e "  Start the proxy:       ${BOLD}stitcher-proxy${RESET}"
-echo -e "  Auto-configure tools:  ${BOLD}stitcher-proxy integrate all${RESET}"
+echo -e "  Run the setup wizard:  ${BOLD}neverforget init${RESET}"
+echo -e "  Start the proxy:       ${BOLD}neverforget${RESET}"
+echo -e "  Auto-configure tools:  ${BOLD}neverforget integrate all${RESET}"
 echo ""
 
 # Offer to run wizard
 read -p "Run setup wizard now? [Y/n] " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-    stitcher-proxy init
+    neverforget init
 fi

@@ -1,18 +1,18 @@
 {
-  "name": "stitcher-proxy",
+  "name": "neverforget",
   "version": "1.0.0",
   "description": "Universal infinite-memory proxy for LLMs. LLMs have amnesia. Stitcher is the cure.",
   "type": "module",
   "bin": {
-    "stitcher-proxy": "./bin/stitcher-proxy.mjs"
+    "neverforget": "./bin/neverforget.mjs"
   },
   "scripts": {
-    "start": "node ./bin/stitcher-proxy.mjs start"
+    "start": "node ./bin/neverforget.mjs start"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nicolaisand/stitcher-proxy-node.git"
+    "url": "https://github.com/nicolaisand/neverforget-node.git"
   },
   "keywords": ["llm", "proxy", "memory", "context", "openai", "anthropic", "claude"]
 }

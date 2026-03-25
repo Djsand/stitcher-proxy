@@ -1,6 +1,6 @@
-# 🧵 Stitcher Proxy
+# 🧵 NeverForget
 
-**LLMs have amnesia. Stitcher is the cure.**
+**LLMs have amnesia. NeverForget is the cure.**
 
 A transparent proxy that gives any LLM infinite memory. Zero dependencies. One command.
 
@@ -9,29 +9,29 @@ A transparent proxy that gives any LLM infinite memory. Zero dependencies. One c
 ## Install
 
 ```bash
-npm install -g stitcher-proxy
+npm install -g neverforget
 ```
 
 Or run without installing:
 
 ```bash
-npx stitcher-proxy
+npx neverforget
 ```
 
 Or one-liner:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Djsand/stitcher-proxy/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Djsand/neverforget/main/install.sh | bash
 ```
 
 ## How It Works
 
-You point your LLM client at Stitcher instead of OpenAI/Anthropic directly.
-Stitcher intercepts every request, stitches in the full conversation history from local storage, and forwards it upstream. Your LLM gets maximum context every time. Transparently.
+You point your LLM client at NeverForget instead of OpenAI/Anthropic directly.
+NeverForget intercepts every request, stitches in the full conversation history from local storage, and forwards it upstream. Your LLM gets maximum context every time. Transparently.
 
 ```
 ┌─────────┐     POST /v1/chat/completions      ┌──────────────────┐
-│  Your    │ ─────────────────────────────────▶ │  Stitcher Proxy  │
+│  Your    │ ─────────────────────────────────▶ │  NeverForget  │
 │  App     │    (only new messages)             │                  │
 └─────────┘                                     │  1. Save to JSONL│
      ▲                                          │  2. Stitch history│
@@ -51,13 +51,13 @@ Stitcher intercepts every request, stitches in the full conversation history fro
 
 ```bash
 # Setup (pick provider, set API key, configure token budget)
-stitcher-proxy init
+neverforget init
 
 # Start the proxy
-stitcher-proxy
+neverforget
 
 # Auto-configure Claude Code, Codex, and all OpenAI clients
-stitcher-proxy integrate all
+neverforget integrate all
 ```
 
 ## Usage
@@ -70,21 +70,21 @@ from openai import OpenAI
 client = OpenAI(
     base_url="http://localhost:8081/v1",
     api_key="your-real-key",
-    default_headers={"X-Stitcher-Session": "user-123"}
+    default_headers={"X-NeverForget-Session": "user-123"}
 )
 
 response = client.chat.completions.create(
     model="gpt-4o",
     messages=[{"role": "user", "content": "What did we talk about yesterday?"}]
 )
-# Stitcher injected the full history. The model remembers.
+# NeverForget injected the full history. The model remembers.
 ```
 
 ```bash
 curl http://localhost:8081/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -H "X-Stitcher-Session: my-session" \
+  -H "X-NeverForget-Session: my-session" \
   -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Continue where we left off."}]}'
 ```
 
@@ -93,29 +93,29 @@ curl http://localhost:8081/v1/chat/completions \
 Claude Code · Codex · Cursor · OpenClaw · LangChain · Vercel AI SDK · Ollama · vLLM · any OpenAI-compatible client
 
 ```bash
-stitcher-proxy integrate all          # Configure everything
-stitcher-proxy integrate claude-code  # Just Claude Code
-stitcher-proxy integrate codex        # Just Codex
+neverforget integrate all          # Configure everything
+neverforget integrate claude-code  # Just Claude Code
+neverforget integrate codex        # Just Codex
 ```
 
 ## CLI Reference
 
 ```
-stitcher-proxy                        Start the proxy
-stitcher-proxy init                   Interactive setup wizard
-stitcher-proxy start [--port N]       Start with options
-stitcher-proxy status                 Config + session count
-stitcher-proxy sessions               List sessions
-stitcher-proxy sessions purge <name>  Delete a session
-stitcher-proxy config                 Show all settings
-stitcher-proxy config edit            Interactive config editor
-stitcher-proxy config set <key> <val> Quick set a value
-stitcher-proxy integrate [target]     Auto-configure integrations
+neverforget                        Start the proxy
+neverforget init                   Interactive setup wizard
+neverforget start [--port N]       Start with options
+neverforget status                 Config + session count
+neverforget sessions               List sessions
+neverforget sessions purge <name>  Delete a session
+neverforget config                 Show all settings
+neverforget config edit            Interactive config editor
+neverforget config set <key> <val> Quick set a value
+neverforget integrate [target]     Auto-configure integrations
 ```
 
 ## Configuration
 
-All settings are tunable via `stitcher-proxy config edit`:
+All settings are tunable via `neverforget config edit`:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -131,7 +131,7 @@ Config priority: CLI flags → env vars → `~/.stitcher/config.json` → defaul
 
 ## Under The Hood
 
-Stitcher stores every message as a line in JSONL files. When context is needed:
+NeverForget stores every message as a line in JSONL files. When context is needed:
 
 1. **Read backward** through archived files (newest → oldest)
 2. **Deduplicate** near-identical assistant messages via trigram similarity
