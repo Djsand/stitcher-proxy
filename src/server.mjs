@@ -347,7 +347,8 @@ async function handleAnthropicMessages(req, res, bodyStr) {
   
   const proxyBodyStr = JSON.stringify(proxyBody);
   
-  let baseUrl = config.upstream_url.replace(/\/$/, "");
+  // Use Anthropic-specific upstream (NOT the OpenAI upstream)
+  let baseUrl = (config.anthropic_upstream_url || "https://api.anthropic.com").replace(/\/$/, "");
   let upstreamUrl;
   if (baseUrl.endsWith("/v1")) {
     upstreamUrl = `${baseUrl}/messages`;
@@ -364,6 +365,7 @@ async function handleAnthropicMessages(req, res, bodyStr) {
     "Content-Length": Buffer.byteLength(proxyBodyStr)
   };
   
+  // Anthropic uses x-api-key, not Bearer tokens
   if (req.headers["x-api-key"]) headers["x-api-key"] = req.headers["x-api-key"];
   else if (req.headers["api-key"]) headers["x-api-key"] = req.headers["api-key"];
   else if (req.headers["authorization"]) {

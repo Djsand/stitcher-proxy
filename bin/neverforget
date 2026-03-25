@@ -29,10 +29,11 @@ async function startProxy(opts) {
   console.log(`
   ${c("🧠 NeverForget", "bold")} ${c("v" + getVersion(), "dim")}
   
-  ${c("Port:", "dim")}     ${c(config.port, "cyan")}
-  ${c("Upstream:", "dim")} ${c(config.upstream_url, "cyan")}
-  ${c("Tokens:", "dim")}   ${c(config.max_tokens.toLocaleString(), "cyan")}
-  ${c("Storage:", "dim")}  ${c(config.data_dir, "dim")}
+  ${c("Port:", "dim")}       ${c(config.port, "cyan")}
+  ${c("OpenAI →", "dim")}    ${c(config.upstream_url, "cyan")}
+  ${c("Anthropic →", "dim")} ${c(config.anthropic_upstream_url, "cyan")}
+  ${c("Tokens:", "dim")}     ${c(config.max_tokens.toLocaleString(), "cyan")}
+  ${c("Storage:", "dim")}    ${c(config.data_dir, "dim")}
   `);
 
   console.log(c("  Ready. Point your LLM client at:", "green"));

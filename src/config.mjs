@@ -5,6 +5,7 @@ import os from 'os';
 export const config = {
   port: 8081,
   upstream_url: "https://api.openai.com",
+  anthropic_upstream_url: "https://api.anthropic.com",
   api_key: "",
   default_model: "",
   max_tokens: 128000,
@@ -25,6 +26,7 @@ export function saveConfig() {
   const data = {
     port: config.port,
     upstream: config.upstream_url,
+    anthropic_upstream: config.anthropic_upstream_url,
     api_key: config.api_key,
     default_model: config.default_model,
     max_tokens: config.max_tokens,
@@ -44,6 +46,7 @@ export function loadConfigFile() {
       const data = JSON.parse(fs.readFileSync(p, "utf-8"));
       if (data.port !== undefined) config.port = data.port;
       if (data.upstream !== undefined) config.upstream_url = data.upstream;
+      if (data.anthropic_upstream !== undefined) config.anthropic_upstream_url = data.anthropic_upstream;
       if (data.api_key !== undefined) config.api_key = data.api_key;
       if (data.default_model !== undefined) config.default_model = data.default_model;
       if (data.max_tokens !== undefined) config.max_tokens = data.max_tokens;
@@ -63,6 +66,7 @@ export function setupConfig(opts = {}) {
   
   if (process.env.STITCHER_PORT) config.port = parseInt(process.env.STITCHER_PORT, 10);
   if (process.env.STITCHER_UPSTREAM) config.upstream_url = process.env.STITCHER_UPSTREAM;
+  if (process.env.STITCHER_ANTHROPIC_UPSTREAM) config.anthropic_upstream_url = process.env.STITCHER_ANTHROPIC_UPSTREAM;
   if (process.env.STITCHER_API_KEY) config.api_key = process.env.STITCHER_API_KEY;
   if (process.env.STITCHER_DEFAULT_MODEL) config.default_model = process.env.STITCHER_DEFAULT_MODEL;
   if (process.env.STITCHER_MAX_TOKENS) config.max_tokens = parseInt(process.env.STITCHER_MAX_TOKENS, 10);
