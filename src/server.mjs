@@ -349,13 +349,16 @@ async function handleAnthropicMessages(req, res, bodyStr) {
   
   // Use Anthropic-specific upstream (NOT the OpenAI upstream)
   let baseUrl = (config.anthropic_upstream_url || "https://api.anthropic.com").replace(/\/$/, "");
+  // Preserve query params (e.g. ?beta=true from Claude Code)
+  const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const queryStr = reqUrl.search || "";
   let upstreamUrl;
   if (baseUrl.endsWith("/v1")) {
-    upstreamUrl = `${baseUrl}/messages`;
+    upstreamUrl = `${baseUrl}/messages${queryStr}`;
   } else if (baseUrl.includes("/v1/")) {
-    upstreamUrl = baseUrl;
+    upstreamUrl = `${baseUrl}${queryStr}`;
   } else {
-    upstreamUrl = `${baseUrl}/v1/messages`;
+    upstreamUrl = `${baseUrl}/v1/messages${queryStr}`;
   }
   
   const urlObj = new URL(upstreamUrl);
@@ -381,6 +384,13 @@ async function handleAnthropicMessages(req, res, bodyStr) {
     headers["anthropic-version"] = req.headers["anthropic-version"];
   } else {
     headers["anthropic-version"] = "2023-06-01";
+  }
+  
+  // Forward all anthropic-* and x-stainless-* headers (Claude Code sends many)
+  for (const [key, val] of Object.entries(req.headers)) {
+    if ((key.startsWith("anthropic-") || key.startsWith("x-stainless-") || key === "x-app") && !headers[key]) {
+      headers[key] = val;
+    }
   }
 
   const isStream = !!body.stream;
@@ -569,9 +579,9 @@ export function startServer() {
     const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     
     // Health check
-    if (req.method === 'GET' && (urlObj.pathname === '/health' || urlObj.pathname === '/')) {
+    if ((req.method === 'GET' || req.method === 'HEAD') && (urlObj.pathname === '/health' || urlObj.pathname === '/')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ status: "ok", service: "neverforget" }));
+      return res.end(req.method === 'HEAD' ? '' : JSON.stringify({ status: "ok", service: "neverforget" }));
     }
     
     if (req.method === 'GET' && urlObj.pathname === '/v1/stitcher/stats') {
