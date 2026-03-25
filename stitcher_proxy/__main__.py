@@ -151,28 +151,109 @@ def sessions_cmd(args):
                     pass
             print(f"- {d.name} ({msg_count} msgs, {size / 1024:.1f} KB)")
 
+CONFIG_SCHEMA = [
+    # (key, label, type, description)
+    ("port", "Proxy port", int, "Port the proxy listens on"),
+    ("upstream_url", "Upstream URL", str, "LLM API endpoint (OpenAI, Anthropic, custom)"),
+    ("api_key", "API key", "secret", "API key for upstream provider"),
+    ("default_model", "Default model", str, "Model to use if client doesn't specify one"),
+    ("max_tokens", "Max token budget", int, "Maximum tokens in stitched context window"),
+    ("dedup_threshold", "Dedup threshold", float, "Similarity threshold for skipping duplicate messages (0.0–1.0)"),
+    ("condense_threshold", "Condense threshold", float, "Similarity threshold for condensing older messages (0.0–1.0)"),
+    ("chars_per_token", "Chars per token", int, "Character-to-token ratio for estimation"),
+    ("roll_size_bytes", "File roll size", int, "JSONL file size before rolling to archive (bytes)"),
+    ("data_dir", "Data directory", str, "Where session JSONL files are stored"),
+]
+
 def config_cmd(args):
     setup_config()
     config = get_config()
+    
     if getattr(args, "config_cmd", None) == "set" and getattr(args, "key", None) and getattr(args, "value", None):
         key = args.key
         val = args.value
         if hasattr(config, key):
-            if key in ['port', 'max_tokens', 'roll_size_bytes']:
-                setattr(config, key, int(val))
-            else:
-                setattr(config, key, val)
+            schema_entry = next((s for s in CONFIG_SCHEMA if s[0] == key), None)
+            if schema_entry:
+                typ = schema_entry[2]
+                if typ == int: val = int(val)
+                elif typ == float: val = float(val)
+            setattr(config, key, val)
             save_config()
-            print(c(f"✅ Updated {key} to {val}", "green"))
+            print(c(f"✅ {key} = {val}", "green"))
         else:
-            print(c(f"❌ Invalid config key: {key}", "red"))
+            print(c(f"❌ Unknown key: {key}", "red"))
+            print(f"   Available: {', '.join(s[0] for s in CONFIG_SCHEMA)}")
+    
+    elif getattr(args, "config_cmd", None) == "edit":
+        _interactive_config(config)
+    
     else:
-        print(c("⚙️  Current Config", "cyan"))
-        for k, v in config.__dict__.items():
-            if k == "api_key" and v:
-                print(f"{k} = ***")
+        print(c("⚙️  Stitcher Config", "cyan"))
+        print(c(f"   File: {get_config_file_path()}", "yellow"))
+        print()
+        for key, label, typ, desc in CONFIG_SCHEMA:
+            val = getattr(config, key, "")
+            if typ == "secret" and val:
+                display = val[:4] + "***" + val[-4:] if len(str(val)) > 8 else "***"
             else:
-                print(f"{k} = {v}")
+                display = val
+            print(f"  {c(key, 'bold'):40s} {display}")
+            print(f"  {'':40s} {c(desc, 'yellow')}")
+        print()
+        print(f"  Edit interactively: {c('stitcher-proxy config edit', 'green')}")
+        print(f"  Set one value:      {c('stitcher-proxy config set <key> <value>', 'green')}")
+
+def _interactive_config(config):
+    print(c("⚙️  Stitcher Config — Interactive Editor", "cyan"))
+    print(c("   Press Enter to keep current value. Type 'skip' to skip remaining.\n", "yellow"))
+    
+    changed = False
+    for key, label, typ, desc in CONFIG_SCHEMA:
+        current = getattr(config, key, "")
+        
+        if typ == "secret":
+            display = "***" if current else "(not set)"
+        else:
+            display = current
+        
+        prompt = f"  {c(label, 'bold')} ({c(desc, 'yellow')})\n  Current: {c(str(display), 'cyan')}\n  > "
+        
+        try:
+            raw = input(prompt).strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        
+        if raw.lower() == "skip":
+            break
+        if not raw:
+            continue
+        
+        # Parse value
+        if typ == int:
+            try:
+                raw = int(raw)
+            except ValueError:
+                print(c(f"  ❌ Expected integer, skipping", "red"))
+                continue
+        elif typ == float:
+            try:
+                raw = float(raw)
+            except ValueError:
+                print(c(f"  ❌ Expected number, skipping", "red"))
+                continue
+        
+        setattr(config, key, raw)
+        changed = True
+        print(c(f"  ✅ {key} → {raw if typ != 'secret' else '***'}", "green"))
+        print()
+    
+    if changed:
+        save_config()
+        print(c(f"\n✅ Config saved to {get_config_file_path()}", "green"))
+    else:
+        print(c("\n  No changes.", "yellow"))
 
 def _add_to_shell_profile(line):
     """Add a line to the user's shell profile if not already present."""
@@ -343,6 +424,7 @@ def main():
     parser_config_set = parser_config_sub.add_parser("set", help="Set a config value")
     parser_config_set.add_argument("key", type=str, help="Config key")
     parser_config_set.add_argument("value", type=str, help="Config value")
+    parser_config_sub.add_parser("edit", help="Interactive config editor")
     
     # integrate
     parser_integrate = subparsers.add_parser("integrate", help="Show integration guides")

@@ -7,7 +7,8 @@ from .storage import get_session_files
 
 logger = logging.getLogger("stitcher.engine")
 
-CHARS_PER_TOKEN = 4  # Heuristic
+def _chars_per_token():
+    return get_config().chars_per_token
 
 def _text_similarity(a: str, b: str) -> float:
     """Quick similarity check — character trigram overlap. 0.0=different, 1.0=identical."""
@@ -23,7 +24,7 @@ def _text_similarity(a: str, b: str) -> float:
     return len(trigrams_a & trigrams_b) / len(trigrams_a | trigrams_b)
 
 def estimate_tokens(text: str) -> int:
-    return len(text) // CHARS_PER_TOKEN
+    return len(text) // _chars_per_token()
 
 def read_jsonl_messages(filepath: str) -> List[Dict[str, Any]]:
     """Read a .jsonl file and extract all messages in order."""
@@ -53,7 +54,7 @@ def read_jsonl_messages(filepath: str) -> List[Dict[str, Any]]:
                                     old_text = m.get("content", "")
                                     if isinstance(old_text, list):
                                         old_text = " ".join(part.get("text", "") for part in old_text if isinstance(part, dict) and part.get("type") == "text")
-                                    if _text_similarity(old_text, msg_text) > 0.60:
+                                    if _text_similarity(old_text, msg_text) > get_config().dedup_threshold:
                                         is_dup = True
                                         break
                                 if is_dup:
@@ -143,7 +144,7 @@ def _condense_repetitive(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                 continue
                 
             sim = _text_similarity(new_text, old_text)
-            if sim > 0.35:
+            if sim > get_config().condense_threshold:
                 condensed.add(idx_old)
 
     if not condensed:

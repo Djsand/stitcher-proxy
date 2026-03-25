@@ -5,11 +5,17 @@ from pathlib import Path
 
 @dataclass
 class Config:
+    # Server
     port: int = 8081
     upstream_url: str = "https://api.openai.com"
     api_key: str = ""
     default_model: str = ""
+    # Context engine
     max_tokens: int = 128000
+    dedup_threshold: float = 0.60        # Similarity threshold for dedup (0.0-1.0)
+    condense_threshold: float = 0.35     # Similarity threshold for condensing older messages
+    chars_per_token: int = 4             # Rough char/token ratio for estimation
+    # Storage
     data_dir: Path = Path.home() / ".stitcher" / "sessions"
     roll_size_bytes: int = 5 * 1024 * 1024  # 5 MB
 
@@ -31,7 +37,11 @@ def save_config():
             "api_key": _config.api_key,
             "default_model": _config.default_model,
             "max_tokens": _config.max_tokens,
-            "data_dir": str(_config.data_dir)
+            "dedup_threshold": _config.dedup_threshold,
+            "condense_threshold": _config.condense_threshold,
+            "chars_per_token": _config.chars_per_token,
+            "data_dir": str(_config.data_dir),
+            "roll_size_bytes": _config.roll_size_bytes,
         }, f, indent=2)
 
 def load_config_file():
@@ -45,7 +55,11 @@ def load_config_file():
                 if "api_key" in data: _config.api_key = data["api_key"]
                 if "default_model" in data: _config.default_model = data["default_model"]
                 if "max_tokens" in data: _config.max_tokens = data["max_tokens"]
+                if "dedup_threshold" in data: _config.dedup_threshold = float(data["dedup_threshold"])
+                if "condense_threshold" in data: _config.condense_threshold = float(data["condense_threshold"])
+                if "chars_per_token" in data: _config.chars_per_token = int(data["chars_per_token"])
                 if "data_dir" in data: _config.data_dir = Path(data["data_dir"]).expanduser().resolve()
+                if "roll_size_bytes" in data: _config.roll_size_bytes = int(data["roll_size_bytes"])
         except Exception:
             pass
 
