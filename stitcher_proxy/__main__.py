@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import json
 import shutil
 import uvicorn
 from pathlib import Path
@@ -173,28 +174,139 @@ def config_cmd(args):
             else:
                 print(f"{k} = {v}")
 
-def integrate_cmd(args):
-    target = getattr(args, "target", None)
-    if target == "claude-code":
-        print(c("🛠️  Claude Code Integration", "cyan"))
-        print("Set the Anthropic base URL environment variable when running Claude Code:")
-        print(c("  export ANTHROPIC_BASE_URL=http://localhost:8081/v1", "green"))
-        print(c("  claude", "green"))
-        print("Alternatively, add it to your shell profile (.zshrc / .bashrc).")
-    elif target == "openclaw":
-        print(c("🛠️  OpenClaw Integration", "cyan"))
-        print("Configure OpenClaw to route through Stitcher. In OpenClaw's model config:")
-        print(c("  \"base_url\": \"http://localhost:8081/v1\"", "green"))
-    elif target == "codex":
-        print(c("🛠️  Codex CLI Integration", "cyan"))
-        print("Set the OpenAI base URL when using Codex:")
-        print(c("  export OPENAI_BASE_URL=http://localhost:8081/v1", "green"))
-        print(c("  codex ...", "green"))
+def _add_to_shell_profile(line):
+    """Add a line to the user's shell profile if not already present."""
+    shell = os.environ.get("SHELL", "/bin/zsh")
+    if "zsh" in shell:
+        profile = Path.home() / ".zshrc"
+    elif "bash" in shell:
+        profile = Path.home() / ".bashrc"
     else:
-        print(c("🛠️  Available Integrations", "cyan"))
-        print("  stitcher-proxy integrate claude-code")
-        print("  stitcher-proxy integrate openclaw")
-        print("  stitcher-proxy integrate codex")
+        profile = Path.home() / ".profile"
+    
+    existing = profile.read_text() if profile.exists() else ""
+    if line in existing:
+        return profile, False  # Already there
+    
+    with open(profile, "a") as f:
+        f.write(f"\n# Stitcher Proxy — infinite LLM memory\n{line}\n")
+    return profile, True
+
+def integrate_cmd(args):
+    setup_config()
+    config = get_config()
+    target = getattr(args, "target", None)
+    port = config.port
+    base = f"http://localhost:{port}/v1"
+    
+    if target == "claude-code":
+        print(c("🧵 Integrating with Claude Code...", "cyan"))
+        line = f'export ANTHROPIC_BASE_URL={base}'
+        profile, added = _add_to_shell_profile(line)
+        if added:
+            print(c(f"✅ Added to {profile}:", "green"))
+            print(f"   {line}")
+            print(f"\n   Run: {c('source ' + str(profile), 'yellow')} or open a new terminal.")
+            print(f"   Then just run {c('claude', 'bold')} as normal — Stitcher handles the rest.")
+        else:
+            print(c(f"✅ Already configured in {profile}", "green"))
+            print(f"   Just run {c('claude', 'bold')} — Stitcher is active.")
+    
+    elif target == "codex":
+        print(c("🧵 Integrating with Codex CLI...", "cyan"))
+        line = f'export OPENAI_BASE_URL={base}'
+        profile, added = _add_to_shell_profile(line)
+        if added:
+            print(c(f"✅ Added to {profile}:", "green"))
+            print(f"   {line}")
+            print(f"\n   Run: {c('source ' + str(profile), 'yellow')} or open a new terminal.")
+            print(f"   Then just run {c('codex', 'bold')} as normal.")
+        else:
+            print(c(f"✅ Already configured in {profile}", "green"))
+    
+    elif target == "cursor":
+        print(c("🧵 Integrating with Cursor...", "cyan"))
+        cursor_settings = Path.home() / ".cursor" / "settings.json"
+        if cursor_settings.exists():
+            import json as _json
+            try:
+                data = _json.loads(cursor_settings.read_text())
+            except Exception:
+                data = {}
+        else:
+            cursor_settings.parent.mkdir(parents=True, exist_ok=True)
+            data = {}
+        data["openai.baseUrl"] = base
+        cursor_settings.write_text(json.dumps(data, indent=2))
+        print(c(f"✅ Updated {cursor_settings}", "green"))
+        print(f"   Set openai.baseUrl = {base}")
+        print(f"   Restart Cursor to apply.")
+    
+    elif target == "openclaw":
+        print(c("🧵 Integrating with OpenClaw...", "cyan"))
+        openclaw_config = Path.home() / ".openclaw" / "openclaw.json"
+        if openclaw_config.exists():
+            import json as _json
+            try:
+                data = _json.loads(openclaw_config.read_text())
+            except Exception:
+                data = {}
+            # Show what to add
+            print(c("Add this to your openclaw.json models config:", "yellow"))
+            print(f'   "baseUrl": "{base}"')
+            print(f"\n   Or set env: {c(f'OPENAI_BASE_URL={base}', 'green')}")
+        else:
+            print(f"   Set env: {c(f'OPENAI_BASE_URL={base}', 'green')}")
+            line = f'export OPENAI_BASE_URL={base}'
+            profile, added = _add_to_shell_profile(line)
+            if added:
+                print(c(f"   Added to {profile}", "green"))
+    
+    elif target == "all":
+        print(c("🧵 Integrating with everything...", "cyan"))
+        # Add both env vars
+        lines = [
+            f'export ANTHROPIC_BASE_URL={base}',
+            f'export OPENAI_BASE_URL={base}',
+        ]
+        shell = os.environ.get("SHELL", "/bin/zsh")
+        if "zsh" in shell:
+            profile = Path.home() / ".zshrc"
+        elif "bash" in shell:
+            profile = Path.home() / ".bashrc"
+        else:
+            profile = Path.home() / ".profile"
+        
+        existing = profile.read_text() if profile.exists() else ""
+        added_lines = []
+        for line in lines:
+            if line not in existing:
+                added_lines.append(line)
+        
+        if added_lines:
+            with open(profile, "a") as f:
+                f.write("\n# Stitcher Proxy — infinite LLM memory\n")
+                for line in added_lines:
+                    f.write(line + "\n")
+            print(c(f"✅ Added to {profile}:", "green"))
+            for line in added_lines:
+                print(f"   {line}")
+        else:
+            print(c(f"✅ Already configured in {profile}", "green"))
+        
+        print(f"\n   Run: {c('source ' + str(profile), 'yellow')} or open a new terminal.")
+        print(f"   Now {c('claude', 'bold')}, {c('codex', 'bold')}, and any OpenAI client will route through Stitcher.")
+    
+    else:
+        print(c("🧵 Stitcher Integrations", "cyan"))
+        print()
+        print(f"  {c('stitcher-proxy integrate all', 'bold')}          — Auto-configure everything (recommended)")
+        print(f"  {c('stitcher-proxy integrate claude-code', 'bold')}  — Claude Code")
+        print(f"  {c('stitcher-proxy integrate codex', 'bold')}        — Codex CLI")
+        print(f"  {c('stitcher-proxy integrate cursor', 'bold')}       — Cursor IDE")
+        print(f"  {c('stitcher-proxy integrate openclaw', 'bold')}     — OpenClaw")
+        print()
+        print(f"  {c('integrate all', 'green')} adds env vars to your shell profile. One command, done.")
 
 def main():
     parser = argparse.ArgumentParser(description="Stitcher Proxy - Universal, infinite-memory proxy for LLM APIs.")
